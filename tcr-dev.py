@@ -10,6 +10,7 @@ Usage summary: upload.py [options] [-- diff_options] [path...]
 Diff options are passed to the diff command of the underlying system.
 """
 
+
 import ConfigParser
 import fnmatch
 import json
@@ -37,7 +38,7 @@ except ImportError:
 
 
 ssl_context = ssl._create_unverified_context()
-    
+
 
 try:
     # import keyring
@@ -59,8 +60,8 @@ DEFAULT_REVIEW_SERVER = "dev.code.woa.com"
 DEFAULT_NEEDED_PARAMETERS = ('isclient', 'true')
 ENCODING_ALL = ('ascii', 'gbk', 'utf-8')
 VERSION = 25
-REAL_VERSION = "2." + str(VERSION)
-REAL_VERSION_ANOTHER = "2_" + str(VERSION)
+REAL_VERSION = f"2.{VERSION}"
+REAL_VERSION_ANOTHER = f"2_{VERSION}"
 
 # Max size of patch or base file.
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024
@@ -125,26 +126,32 @@ def EncodeMultipartFormData(fields, files):
     BOUNDARY = '-M-A-G-I-C---B-O-U-N-D-A-R-Y-'
     CRLF = '\r\n'
     lines = []
-    for (key, value) in fields:
-        lines.append('--' + BOUNDARY)
-        lines.append('Content-Disposition: form-data; name="%s"' % key)
-        lines.append('')
+    for key, value in fields:
+        lines.extend(
+            (
+                f'--{BOUNDARY}',
+                f'Content-Disposition: form-data; name="{key}"',
+                '',
+            )
+        )
         if isinstance(value, unicode):
             value = value.encode('utf-8')
         lines.append(value)
-    for (key, filename, value) in files:
-        lines.append('--' + BOUNDARY)
-        lines.append('Content-Disposition: form-data; name="%s"; filename="%s"' %
-                     (key, filename))
-        lines.append('Content-Type: %s' % GetContentType(filename))
-        lines.append('')
+    for key, filename, value in files:
+        lines.extend(
+            (
+                f'--{BOUNDARY}',
+                f'Content-Disposition: form-data; name="{key}"; filename="{filename}"',
+                f'Content-Type: {GetContentType(filename)}',
+                '',
+            )
+        )
         if isinstance(value, unicode):
             value = value.encode('utf-8')
         lines.append(value)
-    lines.append('--' + BOUNDARY + '--')
-    lines.append('')
+    lines.extend((f'--{BOUNDARY}--', ''))
     body = CRLF.join(lines)
-    content_type = 'multipart/form-data; boundary=%s' % BOUNDARY
+    content_type = f'multipart/form-data; boundary={BOUNDARY}'
     return content_type, body
 
 
@@ -200,7 +207,7 @@ def RunShell(command, silent_ok=False, universal_newlines=True,
     if retcode:
         ErrorExit("Got error status from %s:\n%s" % (command, data))
     if not silent_ok and not data:
-        ErrorExit("No output from %s" % command)
+        ErrorExit(f"No output from {command}")
     return data
 
 
@@ -231,8 +238,7 @@ class CharSetConverter:
             src_str.decode('utf-8')
         except UnicodeDecodeError:
             encoding = 'gbk'
-        retStr = src_str.decode(encoding)
-        return retStr
+        return src_str.decode(encoding)
 
 
 class VersionControlSystem(object):
@@ -257,12 +263,14 @@ class VersionControlSystem(object):
             args: Extra arguments to pass to the diff command.
         """
         raise NotImplementedError(
-            "abstract method -- subclass %s must override" % self.__class__)
+            f"abstract method -- subclass {self.__class__} must override"
+        )
 
     def GetUnknownFiles(self):
         """Return a list of files unknown to the VCS."""
         raise NotImplementedError(
-            "abstract method -- subclass %s must override" % self.__class__)
+            f"abstract method -- subclass {self.__class__} must override"
+        )
 
     def CheckForUnknownFiles(self):
         """Show an "are you sure?" prompt if there are unknown files."""
@@ -288,7 +296,8 @@ class VersionControlSystem(object):
         """
 
         raise NotImplementedError(
-            "abstract method -- subclass %s must override" % self.__class__)
+            f"abstract method -- subclass {self.__class__} must override"
+        )
 
     def GetBaseFiles(self, diff):
         """
@@ -377,19 +386,19 @@ class VersionControlSystem(object):
     def IsImage(self, filename):
         """Returns true if the filename has an image extension."""
         mimetype = mimetypes.guess_type(filename)[0]
-        if not mimetype:
-            return False
-        return mimetype.startswith("image/")
+        return False if not mimetype else mimetype.startswith("image/")
 
     def IsBinary(self, filename):
         """Returns true if the guessed mimetyped isnt't in text group."""
-        mimetype = mimetypes.guess_type(filename)[0]
-        if not mimetype:
+        if mimetype := mimetypes.guess_type(filename)[0]:
+                # special case for text files which don't start with text/
+            return (
+                False
+                if mimetype in TEXT_MIMETYPES
+                else not mimetype.startswith("text/")
+            )
+        else:
             return False  # e.g. README, "real" binaries usually have an extension
-        # special case for text files which don't start with text/
-        if mimetype in TEXT_MIMETYPES:
-            return False
-        return not mimetype.startswith("text/")
 
 
 class SubversionVCS(VersionControlSystem):
@@ -400,9 +409,9 @@ class SubversionVCS(VersionControlSystem):
         if self.options.revision:
             match = re.match(r"(\d+)(:(\d+))?", self.options.revision)
             if not match:
-                ErrorExit("Invalid Subversion revision %s." % self.options.revision)
-            self.rev_start = match.group(1)
-            self.rev_end = match.group(3)
+                ErrorExit(f"Invalid Subversion revision {self.options.revision}.")
+            self.rev_start = match[1]
+            self.rev_end = match[3]
         else:
             self.rev_start = self.rev_end = None
         # Cache output from "svn list -r REVNO dirname".
@@ -438,23 +447,23 @@ class SubversionVCS(VersionControlSystem):
                         if path.startswith("/projects/"):
                             path = path[9:]
                     elif netloc != "pythondev@svn.python.org":
-                        ErrorExit("Unrecognized Python URL: %s" % url)
-                    base = "http://svn.python.org/view/*checkout*%s/" % path
+                        ErrorExit(f"Unrecognized Python URL: {url}")
+                    base = f"http://svn.python.org/view/*checkout*{path}/"
                     logging.info("Guessed Python base = %s", base)
                 elif netloc.endswith("svn.collab.net"):
                     if path.startswith("/repos/"):
                         path = path[6:]
-                    base = "http://svn.collab.net/viewvc/*checkout*%s/" % path
+                    base = f"http://svn.collab.net/viewvc/*checkout*{path}/"
                     logging.info("Guessed CollabNet base = %s", base)
                 elif netloc.endswith(".googlecode.com"):
-                    path = path + "/"
+                    path = f"{path}/"
                     base = urlparse.urlunparse(("http", netloc, path, params,
                                                 query, fragment))
                     logging.info("Guessed Google Code base = %s", base)
                 else:
                     if isFile:
                         path = path[:path.rfind("/")]
-                    path = path + "/"
+                    path = f"{path}/"
                     base = urlparse.urlunparse((scheme, netloc, path, params, query, fragment))
                     logging.info("Guessed base = %s", base)
                 return base
@@ -530,8 +539,8 @@ class SubversionVCS(VersionControlSystem):
 
         def repl(m):
             if m.group(2):
-                return "$%s::%s$" % (m.group(1), " " * len(m.group(3)))
-            return "$%s$" % m.group(1)
+                return f'${m.group(1)}::{" " * len(m.group(3))}$'
+            return f"${m.group(1)}$"
 
         keywords = [keyword
                     for name in keyword_str.split(" ")
@@ -540,11 +549,7 @@ class SubversionVCS(VersionControlSystem):
 
     def GetUnknownFiles(self):
         status = RunShell(["svn", "status", "-q", "--ignore-externals"], silent_ok=True)
-        unknown_files = []
-        for line in status.split("\n"):
-            if line and line[0] == "?":
-                unknown_files.append(line)
-        return unknown_files
+        return [line for line in status.split("\n") if line and line[0] == "?"]
 
     def ReadFile(self, filename):
         """Returns the contents of a file."""
@@ -561,7 +566,7 @@ class SubversionVCS(VersionControlSystem):
         if not self.options.revision:
             status = RunShell(["svn", "status", "--ignore-externals", filename])
             if not status:
-                ErrorExit("svn status returned no output for %s" % filename)
+                ErrorExit(f"svn status returned no output for {filename}")
             status_lines = status.splitlines()
             # If file is in a cl, the output will begin with
             # "\n--- Changelist 'cl_name':\n".  See
@@ -572,16 +577,13 @@ class SubversionVCS(VersionControlSystem):
                 status = status_lines[2]
             else:
                 status = status_lines[0]
-        # If we have a revision to diff against we need to run "svn list"
-        # for the old and the new revision and compare the results to get
-        # the correct status for a file.
         else:
             dirname, relfilename = os.path.split(filename)
             if dirname not in self.svnls_cache:
                 cmd = ["svn", "list", "-r", self.rev_start, dirname or "."]
                 out, returncode = RunShellWithReturnCode(cmd)
                 if returncode:
-                    ErrorExit("Failed to get status for %s." % filename)
+                    ErrorExit(f"Failed to get status for {filename}.")
                 old_files = out.splitlines()
                 args = ["svn", "list"]
                 if self.rev_end:
@@ -589,12 +591,12 @@ class SubversionVCS(VersionControlSystem):
                 cmd = args + [dirname or "."]
                 out, returncode = RunShellWithReturnCode(cmd)
                 if returncode:
-                    ErrorExit("Failed to run command %s" % cmd)
+                    ErrorExit(f"Failed to run command {cmd}")
                 self.svnls_cache[dirname] = (old_files, out.splitlines())
             old_files, new_files = self.svnls_cache[dirname]
             if relfilename in old_files and relfilename not in new_files:
                 status = "D   "
-            elif relfilename in old_files and relfilename in new_files:
+            elif relfilename in old_files:
                 status = "M   "
             else:
                 status = "A   "
@@ -618,12 +620,15 @@ class SubversionVCS(VersionControlSystem):
             is_binary = bool(mimetype) and not mimetype.startswith("text/")
             if is_binary and self.IsImage(filename):
                 new_content = self.ReadFile(filename)
-        elif (status[0] in ("M", "D", "R") or
-              (status[0] == "A" and status[3] == "+") or  # Copied file.
-              (status[0] == " " and status[1] == "M")):  # Property change.
+        elif (
+            status[0] in ("M", "D", "R")
+            or status[0] == "A"
+            or status[0] == " "
+            and status[1] == "M"
+        ):  # Property change.
             args = []
             if self.options.revision:
-                url = "%s/%s@%s" % (self.svn_base, filename, self.rev_start)
+                url = f"{self.svn_base}/{filename}@{self.rev_start}"
             else:
                 # Don't change filename, it's needed later.
                 url = filename
@@ -636,33 +641,31 @@ class SubversionVCS(VersionControlSystem):
                 mimetype = ""
             get_base = False
             is_binary = bool(mimetype) and not mimetype.startswith("text/")
-            if status[0] == " ":
-                # Empty base content just to force an upload.
+            if status[0] != " " and is_binary and self.IsImage(filename):
+                get_base = True
+                if status[0] == "M":
+                    if not self.rev_end:
+                        new_content = self.ReadFile(filename)
+                    else:
+                        url = f"{self.svn_base}/{filename}@{self.rev_end}"
+                        new_content = RunShell(["svn", "cat", url],
+                                               universal_newlines=True, silent_ok=True)
+            elif (
+                status[0] != " "
+                and is_binary
+                and not self.IsImage(filename)
+                or status[0] == " "
+            ):
                 base_content = ""
-            elif is_binary:
-                if self.IsImage(filename):
-                    get_base = True
-                    if status[0] == "M":
-                        if not self.rev_end:
-                            new_content = self.ReadFile(filename)
-                        else:
-                            url = "%s/%s@%s" % (self.svn_base, filename, self.rev_end)
-                            new_content = RunShell(["svn", "cat", url],
-                                                   universal_newlines=True, silent_ok=True)
-                else:
-                    base_content = ""
             else:
                 get_base = True
 
             if get_base:
-                if is_binary:
-                    universal_newlines = False
-                else:
-                    universal_newlines = True
+                universal_newlines = not is_binary
                 if self.rev_start:
                     # "svn cat -r REV delete_file.txt" doesn't work. cat requires
                     # the full URL with "@REV" appended instead of using "-r" option.
-                    url = "%s/%s@%s" % (self.svn_base, filename, self.rev_start)
+                    url = f"{self.svn_base}/{filename}@{self.rev_start}"
                     base_content = RunShell(["svn", "cat", url],
                                             universal_newlines=universal_newlines,
                                             silent_ok=True)
@@ -673,7 +676,7 @@ class SubversionVCS(VersionControlSystem):
                 if not is_binary:
                     args = []
                     if self.rev_start:
-                        url = "%s/%s@%s" % (self.svn_base, filename, self.rev_start)
+                        url = f"{self.svn_base}/{filename}@{self.rev_start}"
                     else:
                         url = filename
                         args += ["-r", "BASE"]
@@ -682,9 +685,9 @@ class SubversionVCS(VersionControlSystem):
                     if keywords and not returncode:
                         base_content = self._CollapseKeywords(base_content, keywords)
         else:
-            StatusUpdate("svn status returned unexpected output: %s" % status)
+            StatusUpdate(f"svn status returned unexpected output: {status}")
             sys.exit(1)
-        return base_content, new_content, is_binary, status[0:5]
+        return base_content, new_content, is_binary, status[:5]
 
 
 # NOTE: The SplitPatch function is duplicated in engine.py, keep them in sync.
@@ -839,14 +842,11 @@ def GuessVCS(options):
 # -------------------------------------------------------------------
 
 def IsBinaryFile(filepath):
-    isBinary = False
     lastdotindex = filepath.rfind('.')
     suffix = ''
     if 0 <= lastdotindex <= len(filepath) - 2:
         suffix = filepath[(lastdotindex + 1):]
-    if suffix != '' and suffix.lower() in IGNORE_FILE_SUFFIX:
-        isBinary = True
-    return isBinary
+    return suffix != '' and suffix.lower() in IGNORE_FILE_SUFFIX
 
 
 def TencentAccount(users):
@@ -858,9 +858,9 @@ def TencentAccount(users):
         if user.endswith('@tencent.com'):
             user = user.split('@')[0]
         if len(user) == 0:
-            ErrorExit("Invalid user account : %s" % user)
+            ErrorExit(f"Invalid user account : {user}")
         user_list.append(user)
-    email_list = ['%s@tencent.com' % user for user in user_list]
+    email_list = [f'{user}@tencent.com' for user in user_list]
     # print  ','.join(email_list)
     return ','.join(email_list)
 
@@ -929,7 +929,7 @@ def FilterData(data, files):
                     keep_line = True
                 filename = removeFileBase(filename)
                 curfiles.append(filename)
-                line = 'Index: ' + filename + '\r\n'
+                line = f'Index: {filename}' + '\r\n'
             else:
                 keep_line = False
         # elif line.startswith('Property changes on:'):
@@ -944,30 +944,35 @@ def FilterData(data, files):
 
 
 def BinaryFileDiff(filepath):
-    data = ''
-    delFile = False
     revision = 'none'
     status = RunShell(["svn", "status", "-q", "--ignore-externals", filepath], silent_ok=True)
-    for line in status.split("\n"):
-        if line.startswith('D') and line[4:].strip().replace('\\', '/') == filepath:
-            delFile = True
-            break
+    delFile = any(
+        line.startswith('D')
+        and line[4:].strip().replace('\\', '/') == filepath
+        for line in status.split("\n")
+    )
     if delFile:
         info, retcode = RunShellWithReturnCode(["svn", "info", filepath])
         if retcode:
-            ErrorExit("Failed to get info for %s." % filepath)
+            ErrorExit(f"Failed to get info for {filepath}.")
         for line in info.splitlines():
             words = line.split(': ')
             if len(words) == 2:
                 if words[0] == "Last Changed Rev":
                     revision = words[1]
                     break
-    data = data + ''.join(["Index: ", removeFileBase(filepath),
-                           "\r\n===================================================================\r\n--- ",
-                           filepath + "\t(revision " + revision + ")\r\n",
-                           "+++ ", filepath, "\t(working copy)\r\n@@ ",
-                           "-1,1 +0,0 @@\r\n-\r\n" if delFile else "-0,0 +1,0 @@\r\n+\r\n"])
-    return data
+    return '' + ''.join(
+        [
+            "Index: ",
+            removeFileBase(filepath),
+            "\r\n===================================================================\r\n--- ",
+            filepath + "\t(revision " + revision + ")\r\n",
+            "+++ ",
+            filepath,
+            "\t(working copy)\r\n@@ ",
+            "-1,1 +0,0 @@\r\n-\r\n" if delFile else "-0,0 +1,0 @@\r\n+\r\n",
+        ]
+    )
 
 
 def FilterFiles(files):
@@ -976,12 +981,12 @@ def FilterFiles(files):
         for keep in options.files.split(";"):
             if keep == '':
                 continue
-            keep = options.path + '/' + keep
+            keep = f'{options.path}/{keep}'
             keep = "/".join(keep.split("\\"))
             keep_list.append(keep)
         keep_files = {}
         for f, info in files.items():
-            filepath = f if options.path != '.' else (options.path + '/' + f)
+            filepath = f if options.path != '.' else f'{options.path}/{f}'
             if isSubFile(keep_list, filepath):
                 keep_files[f] = info
         files = keep_files
@@ -990,7 +995,7 @@ def FilterFiles(files):
     if options.skip:
         skip_list = []
         for skip in options.skip.split(";"):
-            skip = options.path + '/' + skip
+            skip = f'{options.path}/{skip}'
             skip = "/".join(skip.split("\\"))
             if skip.find("/") == 0:
                 skip = skip[1:]
@@ -1042,28 +1047,36 @@ def CheckCopyFile(files):
             filepath = line[4:].strip().replace('\\', '/')
             filename = removeFileBase(filepath)
             if filename not in curFileNames and (len(filterFileNames) == 0 or filename in filterFileNames) and (len(options.args) == 0 or isSubFile(options.args, filepath)):
-                data += ''.join(["Index: ", filename,
-                                 "\r\n===================================================================\r\n",
-                                 CheckCopyfrom("--- " + filepath + "\t(revision -1)\r\n"),
-                                 "+++ ", filepath, "\t(working copy)\r\n"])
+                data += ''.join(
+                    [
+                        "Index: ",
+                        filename,
+                        "\r\n===================================================================\r\n",
+                        CheckCopyfrom(
+                            f"--- {filepath}" + "\t(revision -1)\r\n"
+                        ),
+                        "+++ ",
+                        filepath,
+                        "\t(working copy)\r\n",
+                    ]
+                )
     return data
 
 
 def removeFileBase(filepath):
     if options.path != '.':
         filename = filepath[len(options.path) + 1:]
-        if len(filename) == 0:
-            return filepath[filepath.rfind('/') + 1:]
-        else:
-            return filename
+        return filepath[filepath.rfind('/') + 1:] if len(filename) == 0 else filename
     return filepath
 
 
 def isSubFile(roots, filepath):
-    for root in roots:
-        if root == filepath or (root == './' + filepath) or (os.path.isdir(root) and filepath.startswith(root)):
-            return True
-    return False
+    return any(
+        root == filepath
+        or root == f'./{filepath}'
+        or (os.path.isdir(root) and filepath.startswith(root))
+        for root in roots
+    )
 
 
 def FormatSvnUrl(url):
@@ -1154,7 +1167,7 @@ def TencentFormatAccount(users):
         if user.endswith('@tencent.com'):
             user = user.split('@')[0]
         if len(user) == 0:
-            ErrorExit("Invalid user account : %s" % user)
+            ErrorExit(f"Invalid user account : {user}")
         user_list.append(user)
     return ';'.join(user_list)
 
@@ -1182,11 +1195,12 @@ def LoadSubversionAutoProperties():
             config.has_option("miscellany", "enable-auto-props") and
             config.getboolean("miscellany", "enable-auto-props") and
             config.has_section("auto-props")):
-        props = {}
-        for file_pattern in config.options("auto-props"):
-            props[file_pattern] = ParseSubversionPropertyValues(
-                config.get("auto-props", file_pattern))
-        return props
+        return {
+            file_pattern: ParseSubversionPropertyValues(
+                config.get("auto-props", file_pattern)
+            )
+            for file_pattern in config.options("auto-props")
+        }
     else:
         return {}
 
@@ -1252,23 +1266,23 @@ def FormatSubversionPropertyChanges(filename, props):
         <BLANKLINE>
     """
     prop_changes_lines = [
-        "Property changes on: %s" % filename,
-        "___________________________________________________________________"]
+        f"Property changes on: {filename}",
+        "___________________________________________________________________",
+    ]
     for key, value in props:
-        prop_changes_lines.append("Added: " + key)
-        prop_changes_lines.append("   + " + value)
+        prop_changes_lines.extend((f"Added: {key}", f"   + {value}"))
     return "\n".join(prop_changes_lines) + "\n"
 
 
 def GetRequest(server, url, field_form=None, data=None, content_type=None, accept_type=None):
     if not server:
         server = DEFAULT_REVIEW_SERVER
-    url = "%s/%s" % (server, url)
+    url = f"{server}/{url}"
     if not url.startswith('https://'):
-        url = 'https://%s' % url
+        url = f'https://{url}'
     if field_form:
-        url += "?" + urllib.urlencode(field_form)
-        # url += "?" + urllib.unquote(urllib.urlencode(field_form)).decode('utf8')
+        url += f"?{urllib.urlencode(field_form)}"
+            # url += "?" + urllib.unquote(urllib.urlencode(field_form)).decode('utf8')
     request = urllib2.Request(url, data)
     if content_type:
         request.add_header("Content-Type", str(content_type))
@@ -1453,10 +1467,15 @@ def setInitparser(parser):
 
 def ValidataVersion():
     form_filed = [("version", VERSION)]
-    # form_filed.append(DEFAULT_NEEDED_PARAMETERS)
-    # versionInfo = OpenHttp(options.server, "websvn/ldap.jsp", form_filed).strip()
-    versionInfo = OpenHttp(options.server, "web/api/tcr/client/checkPythonClientVersion", form_filed).strip().replace('"', '')
-    if versionInfo:
+    if (
+        versionInfo := OpenHttp(
+            options.server,
+            "web/api/tcr/client/checkPythonClientVersion",
+            form_filed,
+        )
+        .strip()
+        .replace('"', '')
+    ):
         ErrorExit(versionInfo.replace("  ", "\r\n"))
 
 
@@ -1468,10 +1487,9 @@ def GetCodeOwners(svnurl):
         # owners = OpenHttp(options.server, 'websvn/internal/api/getCodeOwners', form_filed, data=svnurl)
         form_filed = [("rootUrl", svnurl)]
         owner = OpenHttp(options.server, 'web/api/tcr/client/getOwners', form_filed)
-        owner = owner.split(',')[4].split(':')[1]
-        if owner:
+        if owner := owner.split(',')[4].split(':')[1]:
             owners = owner[1:-1]
-            if owners == 'null' or owners == 'nul':
+            if owners in ['null', 'nul']:
                 owners = ''
     return owners
 
